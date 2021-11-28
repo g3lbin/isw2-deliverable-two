@@ -11,10 +11,16 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.diff.DiffEntry;
+import org.eclipse.jgit.diff.DiffFormatter;
+import org.eclipse.jgit.diff.Edit;
+import org.eclipse.jgit.diff.RawTextComparator;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -26,6 +32,7 @@ import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.treewalk.filter.PathSuffixFilter;
 import org.eclipse.jgit.treewalk.filter.TreeFilter;
+import org.eclipse.jgit.util.io.DisabledOutputStream;
 import org.json.JSONException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,7 +44,7 @@ public class CreateDataset {
 	private static final Logger LOGGER = LoggerFactory.getLogger(CreateDataset.class);
 	private static HashSet<String> set;
 	
-	private static void writeRow(FileWriter fileWriter, String releaseName, LocalDateTime releaseStart, LocalDateTime releaseEnd, Repository repository) {
+	private static void writeRow(MetricsCalculator mc, FileWriter fileWriter, String releaseName, LocalDateTime releaseStart, LocalDateTime releaseEnd, Repository repository) {
 		try (
 	    		RevWalk revWalk = new RevWalk(repository);
 	    		TreeWalk treeWalk = new TreeWalk(repository);
@@ -52,6 +59,34 @@ public class CreateDataset {
 		    	if (commit == null) {
 		    		break;
 		    	}
+		    	RevCommit parent = revWalk.parseCommit(commit.getParent(0).getId());
+				DiffFormatter df = new DiffFormatter(DisabledOutputStream.INSTANCE);
+				df.setRepository(repository);
+				df.setDiffComparator(RawTextComparator.DEFAULT);
+				df.setDetectRenames(true);
+				List<DiffEntry> diffs = df.scan(parent.getTree(), commit.getTree());
+				int chgSetSize = diffs.size();
+				for (DiffEntry diff : diffs) {
+					String path = diff.getNewPath();
+					String extension = FilenameUtils.getExtension(path);
+					if (!extension.equals("java")) {
+						continue;
+					}
+					String oldPath = diff.getOldPath();
+					if (!path.equals(oldPath) && FilenameUtils.getExtension(oldPath).equals("java")) {
+						mc.renameClass(oldPath, path);
+					}
+					int linesAdded = 0;
+					int linesDeleted = 0;
+					for (Edit edit : df.toFileHeader(diff).toEditList()) {
+			            linesDeleted += edit.getEndA() - edit.getBeginA();
+			            linesAdded += edit.getEndB() - edit.getBeginB();
+			        }
+					mc.addData(path, (float)linesAdded, (float)linesDeleted, (float)chgSetSize);
+				}
+				df.close();
+				
+				// check for new files
 		    	RevTree tree = commit.getTree();
 		    	TreeFilter treeFilter = PathSuffixFilter.create(".java");
 		    	treeWalk.addTree(tree);
@@ -63,13 +98,9 @@ public class CreateDataset {
 		    	    } else {
 		    	    	// get class name (path)
 		    	    	String path = treeWalk.getPathString();
-		    	    	if (!set.contains(path)) {
-		    	    		set.add(path);
-		    	    		fileWriter.append(releaseName + "," + path + "\n");
-		    	    	}
+		    	    	mc.addRevision(path);
 		    	    }
 		    	}
-		    	fileWriter.flush();
 	    	}
     	} catch (IOException | JSONException e) {
 			System.exit(1);
@@ -88,6 +119,7 @@ public class CreateDataset {
 		String releaseDate;
 		final String URL = "https://github.com/apache/" + PROJECT + ".git";
 		final String ROOT = "jgit/";
+		MetricsCalculator mc;
 		
 		try {
 			// check number of release
@@ -122,7 +154,7 @@ public class CreateDataset {
     			FileWriter fileWriter = new FileWriter(DATASET);
     		) {
     		// file CSV initialization
-		    fileWriter.append("Version,File Name");
+		    fileWriter.append("Version,File Name,NR,NAuth,LOC_added,MAX_LOC_added,AVG_LOC_added,Churn,MAX_Churn,AVG_Churn,ChgSetSize,MAX_ChgSet,AVG_ChgSet");
 		    fileWriter.append("\n");
 	    	
 			// discard the column names
@@ -143,7 +175,9 @@ public class CreateDataset {
 				
 				prev = next;
 				set =  new HashSet<>();
-				writeRow(fileWriter, releaseName, releaseStart, releaseEnd, repository);
+				mc = new MetricsCalculator();
+				writeRow(mc, fileWriter, releaseName, releaseStart, releaseEnd, repository);
+				writeOnFile(fileWriter, releaseName, mc);
 			}
     	} catch (GitAPIException | JSONException | IOException e) {
 			LOGGER.error(e.toString(), e);
@@ -157,4 +191,22 @@ public class CreateDataset {
     	}
 	}
 
+	private static void writeOnFile(FileWriter fileWriter, String release, MetricsCalculator mc) throws IOException {
+		for (String cl : mc.getClasses()) {
+			Float m1 = mc.getComputedMetric(cl, MetricsCalculator.NR);
+			Float m2 = mc.getComputedMetric(cl, MetricsCalculator.NAUTH);
+			Float m3 = mc.getComputedMetric(cl, MetricsCalculator.LOC_ADDED);
+			Float m4 = mc.getComputedMetric(cl, MetricsCalculator.MAX_LOC_ADDED);
+			Float m5 = mc.getComputedMetric(cl, MetricsCalculator.AVG_LOC_ADDED);
+			Float m6 = mc.getComputedMetric(cl, MetricsCalculator.CHURN);
+			Float m7 = mc.getComputedMetric(cl, MetricsCalculator.MAX_CHURN);
+			Float m8 = mc.getComputedMetric(cl, MetricsCalculator.AVG_CHURN);
+			Float m9 = mc.getComputedMetric(cl, MetricsCalculator.CHG_SET_SIZE);
+			Float m10 = mc.getComputedMetric(cl, MetricsCalculator.MAX_CHG_SET);
+			Float m11 = mc.getComputedMetric(cl, MetricsCalculator.AVG_CHG_SET);
+			
+			fileWriter.append(release + "," + cl + "," + m1 + "," + m2 + "," + m3 + "," + m4 + "," + m5 + "," + m6 + "," + m7 + "," + m8 + "," + m9 + "," + m10 + "," + m11 + "\n");
+			fileWriter.flush();
+		}
+	}
 }
