@@ -44,7 +44,7 @@ public class CreateDataset {
 	private static final String DATASET = PROJECT + "-ds.csv";
 	private static final Logger LOGGER = LoggerFactory.getLogger(CreateDataset.class);
 	
-	private static Set<String> analyzeRevisions(MetricsCalculator mc, FileWriter fileWriter, String releaseName, LocalDateTime releaseStart, LocalDateTime releaseEnd, Repository repository) {
+	private static Set<String> analyzeRevisions(MetricsCalculator mc, LocalDateTime releaseStart, LocalDateTime releaseEnd, Repository repository) {
 		try (
 	    		RevWalk revWalk = new RevWalk(repository);
 	    		) {
@@ -67,25 +67,7 @@ public class CreateDataset {
 				df.setDiffComparator(RawTextComparator.DEFAULT);
 				df.setDetectRenames(true);
 				List<DiffEntry> diffs = df.scan(parent.getTree(), commit.getTree());
-				int chgSetSize = diffs.size();
-				for (DiffEntry diff : diffs) {
-					String path = diff.getNewPath();
-					String extension = FilenameUtils.getExtension(path);
-					if (!extension.equals("java")) {
-						continue;
-					}
-					String oldPath = diff.getOldPath();
-					if (!path.equals(oldPath) && FilenameUtils.getExtension(oldPath).equals("java")) {
-						mc.renameClass(oldPath, path);
-					}
-					int linesAdded = 0;
-					int linesDeleted = 0;
-					for (Edit edit : df.toFileHeader(diff).toEditList()) {
-			            linesDeleted += edit.getEndA() - edit.getBeginA();
-			            linesAdded += edit.getEndB() - edit.getBeginB();
-			        }
-					mc.addData(path, (float)linesAdded, (float)linesDeleted, (float)chgSetSize, author);
-				}
+				analyzeDiffs(df, diffs, mc, author);
 				df.close();
 		    	lastCommit = commit;
 	    	}
@@ -97,6 +79,28 @@ public class CreateDataset {
 		}
 		
 		return new HashSet<>();
+	}
+	
+	private static void analyzeDiffs(DiffFormatter df, List<DiffEntry> diffs, MetricsCalculator mc, String author) throws IOException {
+		int chgSetSize = diffs.size();
+		for (DiffEntry diff : diffs) {
+			String path = diff.getNewPath();
+			String extension = FilenameUtils.getExtension(path);
+			if (!extension.equals("java")) {
+				continue;
+			}
+			String oldPath = diff.getOldPath();
+			if (!path.equals(oldPath) && FilenameUtils.getExtension(oldPath).equals("java")) {
+				mc.renameClass(oldPath, path);
+			}
+			int linesAdded = 0;
+			int linesDeleted = 0;
+			for (Edit edit : df.toFileHeader(diff).toEditList()) {
+	            linesDeleted += edit.getEndA() - edit.getBeginA();
+	            linesAdded += edit.getEndB() - edit.getBeginB();
+	        }
+			mc.addData(path, (float)linesAdded, (float)linesDeleted, (float)chgSetSize, author);
+		}
 	}
 	
 	private static Set<String> getListOfClasses(RevCommit lastCommit, Repository repository) {
@@ -194,7 +198,7 @@ public class CreateDataset {
 				prev = next;
 
 				mc = new MetricsCalculator();
-				Set<String> classesInRelease = analyzeRevisions(mc, fileWriter, releaseName, releaseStart, releaseEnd, repository);
+				Set<String> classesInRelease = analyzeRevisions(mc, releaseStart, releaseEnd, repository);
 				writeOnFile(fileWriter, releaseName, mc, classesInRelease);
 			}
     	} catch (GitAPIException | JSONException | IOException e) {
