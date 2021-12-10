@@ -12,6 +12,7 @@ import java.time.ZoneId;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
@@ -42,23 +43,24 @@ public class CreateDataset {
 	private static final String PROJECT = "BOOKKEEPER";
 	private static final String DATASET = PROJECT + "-ds.csv";
 	private static final Logger LOGGER = LoggerFactory.getLogger(CreateDataset.class);
-	private static HashSet<String> set;
 	
-	private static void writeRow(MetricsCalculator mc, FileWriter fileWriter, String releaseName, LocalDateTime releaseStart, LocalDateTime releaseEnd, Repository repository) {
+	private static Set<String> analyzeRevisions(MetricsCalculator mc, FileWriter fileWriter, String releaseName, LocalDateTime releaseStart, LocalDateTime releaseEnd, Repository repository) {
 		try (
 	    		RevWalk revWalk = new RevWalk(repository);
-	    		TreeWalk treeWalk = new TreeWalk(repository);
 	    		) {
 			RevFilter between = CommitTimeRevFilter.between(Date.from(releaseStart.atZone(ZoneId.systemDefault()).toInstant()),
 					Date.from(releaseEnd.atZone(ZoneId.systemDefault()).toInstant()));
 			revWalk.setRevFilter(between);
 			revWalk.markStart(revWalk.parseCommit(repository.resolve(Constants.HEAD)));
 	    	revWalk.sort(RevSort.REVERSE); // ordine cronologico
+	    	RevCommit lastCommit = null;
 	    	for (;;) {
 		    	RevCommit commit = revWalk.next();
 		    	if (commit == null) {
 		    		break;
 		    	}
+		    	String author = commit.getAuthorIdent().getName();
+		    	
 		    	RevCommit parent = revWalk.parseCommit(commit.getParent(0).getId());
 				DiffFormatter df = new DiffFormatter(DisabledOutputStream.INSTANCE);
 				df.setRepository(repository);
@@ -82,31 +84,47 @@ public class CreateDataset {
 			            linesDeleted += edit.getEndA() - edit.getBeginA();
 			            linesAdded += edit.getEndB() - edit.getBeginB();
 			        }
-					mc.addData(path, (float)linesAdded, (float)linesDeleted, (float)chgSetSize);
+					mc.addData(path, (float)linesAdded, (float)linesDeleted, (float)chgSetSize, author);
 				}
 				df.close();
-				
-				// check for new files
-		    	RevTree tree = commit.getTree();
-		    	TreeFilter treeFilter = PathSuffixFilter.create(".java");
-		    	treeWalk.addTree(tree);
-		    	treeWalk.setRecursive(false);
-		    	treeWalk.setFilter(treeFilter);
-		    	while (treeWalk.next()) {
-		    	    if (treeWalk.isSubtree()) {
-		    	        treeWalk.enterSubtree();
-		    	    } else {
-		    	    	// get class name (path)
-		    	    	String path = treeWalk.getPathString();
-		    	    	mc.addRevision(path);
-		    	    }
-		    	}
+		    	lastCommit = commit;
+	    	}
+	    	if (lastCommit != null) {
+	    		return getListOfClasses(lastCommit, repository);
 	    	}
     	} catch (IOException | JSONException e) {
 			System.exit(1);
 		}
+		
+		return new HashSet<>();
 	}
 	
+	private static Set<String> getListOfClasses(RevCommit lastCommit, Repository repository) {
+		Set<String> classes = new HashSet<>();
+		// get only existing classes at the end of the release
+		try (
+	    		TreeWalk treeWalk = new TreeWalk(repository);
+			) {
+	    	RevTree tree = lastCommit.getTree();
+	    	TreeFilter treeFilter = PathSuffixFilter.create(".java");
+	    	treeWalk.addTree(tree);
+	    	treeWalk.setRecursive(false);
+	    	treeWalk.setFilter(treeFilter);
+	    	while (treeWalk.next()) {
+	    	    if (treeWalk.isSubtree()) {
+	    	        treeWalk.enterSubtree();
+	    	    } else {
+	    	    	// get class name (path)
+	    	    	classes.add(treeWalk.getPathString());
+	    	    }
+	    	}
+		} catch (IOException | JSONException e) {
+			System.exit(1);
+		}
+		
+		return classes;
+	}
+
 	public static void main(String[] args) {
 		int i;
 		int numOfReleases = 0;
@@ -174,10 +192,10 @@ public class CreateDataset {
 				releaseEnd = LocalDateTime.parse(releaseDate);
 				
 				prev = next;
-				set =  new HashSet<>();
+
 				mc = new MetricsCalculator();
-				writeRow(mc, fileWriter, releaseName, releaseStart, releaseEnd, repository);
-				writeOnFile(fileWriter, releaseName, mc);
+				Set<String> classesInRelease = analyzeRevisions(mc, fileWriter, releaseName, releaseStart, releaseEnd, repository);
+				writeOnFile(fileWriter, releaseName, mc, classesInRelease);
 			}
     	} catch (GitAPIException | JSONException | IOException e) {
 			LOGGER.error(e.toString(), e);
@@ -191,8 +209,8 @@ public class CreateDataset {
     	}
 	}
 
-	private static void writeOnFile(FileWriter fileWriter, String release, MetricsCalculator mc) throws IOException {
-		for (String cl : mc.getClasses()) {
+	private static void writeOnFile(FileWriter fileWriter, String release, MetricsCalculator mc, Set<String> classes) throws IOException {
+		for (String cl : classes) {
 			Float m1 = mc.getComputedMetric(cl, MetricsCalculator.NR);
 			Float m2 = mc.getComputedMetric(cl, MetricsCalculator.NAUTH);
 			Float m3 = mc.getComputedMetric(cl, MetricsCalculator.LOC_ADDED);
@@ -201,11 +219,10 @@ public class CreateDataset {
 			Float m6 = mc.getComputedMetric(cl, MetricsCalculator.CHURN);
 			Float m7 = mc.getComputedMetric(cl, MetricsCalculator.MAX_CHURN);
 			Float m8 = mc.getComputedMetric(cl, MetricsCalculator.AVG_CHURN);
-			Float m9 = mc.getComputedMetric(cl, MetricsCalculator.CHG_SET_SIZE);
-			Float m10 = mc.getComputedMetric(cl, MetricsCalculator.MAX_CHG_SET);
-			Float m11 = mc.getComputedMetric(cl, MetricsCalculator.AVG_CHG_SET);
+			Float m9 = mc.getComputedMetric(cl, MetricsCalculator.MAX_CHG_SET);
+			Float m10 = mc.getComputedMetric(cl, MetricsCalculator.AVG_CHG_SET);
 			
-			fileWriter.append(release + "," + cl + "," + m1 + "," + m2 + "," + m3 + "," + m4 + "," + m5 + "," + m6 + "," + m7 + "," + m8 + "," + m9 + "," + m10 + "," + m11 + "\n");
+			fileWriter.append(release + "," + cl + "," + m1 + "," + m2 + "," + m3 + "," + m4 + "," + m5 + "," + m6 + "," + m7 + "," + m8 + "," + m9 + "," + m10 + "," + "\n");
 			fileWriter.flush();
 		}
 	}

@@ -5,12 +5,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 public class MetricsCalculator {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(MetricsCalculator.class);
 	
 	public static final String NR = "Number of revisions";
 	public static final String NAUTH = "Number of Authors";
@@ -20,47 +15,45 @@ public class MetricsCalculator {
 	public static final String CHURN = "Sum over revisions of added-deleted LOC";
 	public static final String MAX_CHURN = "MAX_CHURN over revisions";
 	public static final String AVG_CHURN = "Average CHURN per revision";
-	public static final String CHG_SET_SIZE = "Number of files committed togheter with it";
 	public static final String MAX_CHG_SET = "Maximum of ChgSet_Size over revisions";
 	public static final String AVG_CHG_SET = "Average of ChgSet_Size over revisions";
 	
 	private Set<String> setOfClasses;
 	private Map<String, Float> numOfRev;
-	private Map<String, Float> numOfAuth;
+	private Map<String, Set<String>> authors;
 	private Map<String, Float> maxLocAdded;
 	private Map<String, Float> totLocAdded;
 	private Map<String, Float> churnMetric;
 	private Map<String, Float> maxChurn;
 	private Map<String, Float> totChurn;
-	private Map<String, Float> chgSetSize;
 	private Map<String, Float> maxChgSet;
 	private Map<String, Float> totChgSet;
 	
 	public MetricsCalculator() {
 		this.setOfClasses = new HashSet<>();
 		this.numOfRev = new HashMap<>();
-		this.numOfAuth = new HashMap<>();
+		this.authors = new HashMap<>();
 		this.maxLocAdded = new HashMap<>();
 		this.totLocAdded = new HashMap<>();
 		this.churnMetric = new HashMap<>();
 		this.maxChurn = new HashMap<>();
 		this.totChurn = new HashMap<>();
-		this.chgSetSize = new HashMap<>();
 		this.maxChgSet = new HashMap<>();
 		this.totChgSet = new HashMap<>();
 	}
 	
-	public void addData(String className, Float linesAdded, Float linesDeleted, Float chgSetSize) {
+	public void addData(String className, Float linesAdded, Float linesDeleted, Float chgSetSize, String author) {
 		Float oldVal;
 		Float newVal;
 		
 		if (!this.setOfClasses.contains(className)) {
-			initMaps(className);
+			initClassMetrics(className);
 		}
-//		LOGGER.info("numOfRev: {}, numOfAuth: {}, maxLocAdded: {}, totLocAdded: {}, churnMetric: {}, maxChurn: {}, totChurn: {}, chgSetSize: {}, maxChgSet: {}, totChgSet: {}",
-//				this.numOfRev.get(className), this.numOfAuth.get(className), this.maxLocAdded.get(className), this.totLocAdded.get(className), this.churnMetric.get(className), this.maxChurn.get(className), this.totChurn.get(className), this.chgSetSize.get(className), this.maxChgSet.get(className), this.totChgSet.get(className));
 		
-		// TO DO: number of authors
+		oldVal = this.numOfRev.get(className);
+		this.numOfRev.replace(className, oldVal + 1);
+		
+		this.authors.get(className).add(author);
 		
 		oldVal = this.maxLocAdded.get(className);
 		if (linesAdded > oldVal) {
@@ -83,43 +76,45 @@ public class MetricsCalculator {
 		oldVal = this.totChurn.get(className);
 		this.totChurn.replace(className, oldVal + newVal);
 		
-		oldVal = this.chgSetSize.get(className);
-		newVal = (float) chgSetSize - 1;
-		this.chgSetSize.replace(className, oldVal + newVal);
-		
 		oldVal = this.maxChgSet.get(className);
-		if (newVal > oldVal) {
+		if (chgSetSize > oldVal) {
 			this.maxChgSet.replace(className, newVal);
 		}
 		
 		oldVal = this.totChgSet.get(className);
-		this.totChgSet.replace(className, oldVal + newVal);
+		this.totChgSet.replace(className, oldVal + chgSetSize);
 	}
 
-	private void initMaps(String className) {
+	private void initClassMetrics(String className) {
 		this.setOfClasses.add(className);
 		this.numOfRev.put(className, (float) 0);
-		this.numOfAuth.put(className, (float) 0);
+		this.authors.put(className, new HashSet<>());
 		this.maxLocAdded.put(className, (float) 0);
 		this.totLocAdded.put(className, (float) 0);
 		this.churnMetric.put(className, (float) 0);
 		this.maxChurn.put(className, (float) 0);
 		this.totChurn.put(className, (float) 0);
-		this.chgSetSize.put(className, (float) 0);
 		this.maxChgSet.put(className, (float) 0);
 		this.totChgSet.put(className, (float) 0);
 	}
 	
 	public void renameClass(String oldName, String newName) {
 		Float val;
+		Set<String> set;
+		
+		if (!this.setOfClasses.contains(oldName)) {
+			initClassMetrics(newName);
+			
+			return;
+		}
 		
 		setOfClasses.remove(oldName);
 		setOfClasses.add(newName);
 		
 		val = this.numOfRev.remove(oldName);
 		this.numOfRev.put(newName, val);
-		val = this.numOfAuth.remove(oldName);
-		this.numOfAuth.put(newName, val);
+		set = this.authors.remove(oldName);
+		this.authors.put(newName, set);
 		val = this.maxLocAdded.remove(oldName);
 		this.maxLocAdded.put(newName, val);
 		val = this.totLocAdded.remove(oldName);
@@ -130,28 +125,22 @@ public class MetricsCalculator {
 		this.maxChurn.put(newName, val);
 		val = this.totChurn.remove(oldName);
 		this.totChurn.put(newName, val);
-		val = this.chgSetSize.remove(oldName);
-		this.chgSetSize.put(newName, val);
 		val = this.maxChgSet.remove(oldName);
 		this.maxChgSet.put(newName, val);
 		val = this.totChgSet.remove(oldName);
 		this.totChgSet.put(newName, val);
 	}
 	
-	public void addRevision(String className) {
-		if (!this.setOfClasses.contains(className)) {
-			initMaps(className);
-		}
-		Float old = this.numOfRev.get(className);
-		this.numOfRev.replace(className, old + 1);
-	}
-	
 	public Float getComputedMetric(String className, String metric) {
+		if (!this.setOfClasses.contains(className)) {
+			return (float) 0;
+		}
+		
 		switch (metric) {
 		case NR:
 			return this.numOfRev.get(className);
 		case NAUTH:
-			return this.numOfAuth.get(className);
+			return (float) this.authors.get(className).size();
 		case LOC_ADDED:
 			return this.totLocAdded.get(className);
 		case MAX_LOC_ADDED:
@@ -164,8 +153,6 @@ public class MetricsCalculator {
 			return this.maxChurn.get(className);
 		case AVG_CHURN:
 			return this.totChurn.get(className) / this.numOfRev.get(className);
-		case CHG_SET_SIZE:
-			return this.chgSetSize.get(className);
 		case MAX_CHG_SET:
 			return this.maxChgSet.get(className);
 		case AVG_CHG_SET:
@@ -174,10 +161,6 @@ public class MetricsCalculator {
 		default:
 			return (float) -1;
 		}
-	}
-	
-	public Set<String> getClasses() {
-		return this.setOfClasses;
 	}
 
 }
