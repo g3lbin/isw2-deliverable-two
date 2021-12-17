@@ -31,7 +31,7 @@ public class GetReleaseInfo {
 		/* to avoid SonarCloud smell */
 	}
    
-	public static int firstHalf(String projectName) throws IOException, JSONException {
+	public static int createOutputFile(String projectName) throws IOException, JSONException {
 		//Fills the array list with releases dates and orders them
 		//Ignores releases with missing dates
 		releases = new ArrayList<>();
@@ -50,8 +50,7 @@ public class GetReleaseInfo {
 		    	addRelease(versions.getJSONObject(i).get("releaseDate").toString(), name);
 			}
 	 	}
-		// take only first half of releases
-		numOfReleases = releases.size() / 2;
+		numOfReleases = releases.size();
 		// order releases by date
 		Collections.sort(releases, (LocalDateTime o1, LocalDateTime o2)->o1.compareTo(o2));
 		//Name of CSV for output
@@ -67,7 +66,7 @@ public class GetReleaseInfo {
 	    	// file CSV initialization
 	        fileWriter.append("Version Name,Date");
 	        fileWriter.append("\n");
-	        for ( i = 0; i < numOfReleases + 1; i++) {
+	        for (i = 0; i < numOfReleases; i++) {
 	        	fileWriter.append(releaseNames.get(releases.get(i)));
 	        	fileWriter.append(",");
 	        	fileWriter.append(releases.get(i).toString());
