@@ -133,7 +133,7 @@ public class RetrieveTicketsFromJira {
 			}
 		}
 		if (!versionsNum.containsKey(iv) || !versionsNum.containsKey(ov) || !versionsNum.containsKey(fv)) {
-			return (float) -1;
+			return -1;
 		}
 		issue.setIv(iv);
 		issue.setOv(ov);
@@ -142,12 +142,12 @@ public class RetrieveTicketsFromJira {
 			issue.setAv(getAV(iv, fv, releases, versionsNum));
 		}
 		if (versionsNum.get(fv) <= (versionsNum.get(ov)) || versionsNum.get(iv) > versionsNum.get(ov) || issue.getAv().contains(fv)) {
-			return (float) -1;
+			return -1;
 		}
 		
 		float currP = (float) (versionsNum.get(fv) - versionsNum.get(iv)) / (float) (versionsNum.get(fv) - versionsNum.get(ov));
 		
-		return p + (currP - p) / (float) iteration;		// update avg with Welford algorithm: avg_i = avg_{i-1} + (x_i - avg_{i-1})/i
+		return p + (currP - p) / iteration;		// update avg with Welford algorithm: avg_i = avg_{i-1} + (x_i - avg_{i-1})/i
 	}
 
 	private static List<String> getAV(String iv, String fv, List<ReleaseInfo> releases, Map<String, Integer> versionsNum) {
