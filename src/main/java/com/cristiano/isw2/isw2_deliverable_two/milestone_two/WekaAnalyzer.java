@@ -14,12 +14,19 @@ import weka.core.Attribute;
 import weka.core.Instance;
 import weka.core.Instances;
 import weka.core.converters.ConverterUtils.DataSource;
+import weka.filters.Filter;
+import weka.filters.supervised.instance.Resample;
+import weka.filters.supervised.instance.SMOTE;
+import weka.filters.supervised.instance.SpreadSubsample;
 
 public class WekaAnalyzer {
 	
 	private static final String PROJECT1 = "BOOKKEEPER";
 	private static final String PROJECT2 = "ZOOKEEPER";
 	private static final String RESULTS = "results.csv";
+	private static final int UNDERSAMPLING = 0;
+	private static final int OVERSAMPLING = 1;
+	private static final int SMOTE = 2;
 	private static final Logger LOGGER = LoggerFactory.getLogger(WekaAnalyzer.class);
 
 	public static void main(String[] args) {
@@ -101,9 +108,72 @@ public class WekaAnalyzer {
 		}
 		testingSet.setClassIndex(instances.numAttributes() - 1);
 		
+		// sampling
+		for (i = 0; i < 3; i++) {
+			Instances filteredTrSet = applySampling(i, trainingSet);
+			if (filteredTrSet != null) {
+				
+			}
+		}
 		
+		// feature selection
 	}
 
-	
+	private static Instances applySampling(int sampling, Instances trainingSet) throws Exception {
+		String[] opts;
+		Instances filteredDataset;
+		Float createdInstancesPercent;
+		
+		float majorityNum;
+		float minorityNum = 0;
+		int buggyIndx = trainingSet.numAttributes() - 1;
+		for(Instance instance: trainingSet){
+		    minorityNum += instance.stringValue(buggyIndx).equals("yes")  ? 1 : 0;
+		}
+		majorityNum = trainingSet.numInstances() - minorityNum;
+		if (minorityNum > majorityNum) {
+			// swap values
+			float temp;
+			temp = minorityNum;
+			minorityNum = majorityNum;
+			majorityNum = temp;
+		}
+		if (minorityNum == 0 || majorityNum == 0) {
+			return null;
+		}
+		
+		switch(sampling) {
+		case UNDERSAMPLING:
+			SpreadSubsample  spreadSubsample = new SpreadSubsample();
+			opts = new String[]{ "-M", "1.0"};
+			spreadSubsample.setOptions(opts);
+			spreadSubsample.setInputFormat(trainingSet);
+			filteredDataset = Filter.useFilter(trainingSet, spreadSubsample);
+			break;
+		case OVERSAMPLING:
+			createdInstancesPercent = 100*(majorityNum - minorityNum) / (majorityNum + minorityNum);
+			Resample resample = new Resample();
+			Float outputSizePercent = 100 + createdInstancesPercent;
+			opts = new String[]{ "-B", "1.0", "-Z", outputSizePercent.toString()};
+			resample.setOptions(opts);
+			resample.setInputFormat(trainingSet);
+			filteredDataset = Filter.useFilter(trainingSet, resample);
+			break;
+		case SMOTE:
+			createdInstancesPercent = 100*(majorityNum - minorityNum) / minorityNum;
+			SMOTE smote = new SMOTE();
+			// specifies percentage of SMOTE instances to create
+			opts = new String[]{ "-P", createdInstancesPercent.toString()};
+			smote.setOptions(opts);
+			smote.setInputFormat(trainingSet);
+			filteredDataset = Filter.useFilter(trainingSet, smote);
+			break;
+		default:
+			return null;
+		
+		}
+		
+		return filteredDataset;
+	}
 
 }
