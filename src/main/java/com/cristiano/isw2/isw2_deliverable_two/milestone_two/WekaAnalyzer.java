@@ -10,11 +10,14 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import weka.attributeSelection.BestFirst;
+import weka.attributeSelection.CfsSubsetEval;
 import weka.core.Attribute;
 import weka.core.Instance;
 import weka.core.Instances;
 import weka.core.converters.ConverterUtils.DataSource;
 import weka.filters.Filter;
+import weka.filters.supervised.attribute.AttributeSelection;
 import weka.filters.supervised.instance.Resample;
 import weka.filters.supervised.instance.SMOTE;
 import weka.filters.supervised.instance.SpreadSubsample;
@@ -69,6 +72,9 @@ public class WekaAnalyzer {
 		Attribute versionAttr = instances.attribute("Version");
 		for (int i = 0; i < numOfReleases - 1; i++) {
 			executeRun(instances, versionAttr, i);
+			// TODO DA RIMUOVERE
+			break;
+			// FINE DA RIMUOVERE
 		}
 	}
 
@@ -88,6 +94,9 @@ public class WekaAnalyzer {
 			Instance instance = instances.instance(i);
 			String release = instance.stringValue(versionAttr);
 			if (trainingReleases.contains(release)) {
+				// TODO DA RIMUOVERE
+				if (i < 50)
+				// FINE DA RIMUOVERE
 				trainingSet.add(instance);
 			} else {
 				firstTestingInstanceIndx = i;
@@ -111,12 +120,16 @@ public class WekaAnalyzer {
 		// sampling
 		for (i = 0; i < 3; i++) {
 			Instances filteredTrSet = applySampling(i, trainingSet);
-			if (filteredTrSet != null) {
-				
+			if (!filteredTrSet.isEmpty()) {
+				// TODO
 			}
 		}
 		
 		// feature selection
+		Instances filteredTrSet = selectFeatures(trainingSet);
+		
+		// cost sensitive
+		
 	}
 
 	private static Instances applySampling(int sampling, Instances trainingSet) throws Exception {
@@ -127,7 +140,7 @@ public class WekaAnalyzer {
 		float majorityNum;
 		float minorityNum = 0;
 		int buggyIndx = trainingSet.numAttributes() - 1;
-		for(Instance instance: trainingSet){
+		for (Instance instance: trainingSet){
 		    minorityNum += instance.stringValue(buggyIndx).equals("yes")  ? 1 : 0;
 		}
 		majorityNum = trainingSet.numInstances() - minorityNum;
@@ -139,7 +152,7 @@ public class WekaAnalyzer {
 			majorityNum = temp;
 		}
 		if (minorityNum == 0 || majorityNum == 0) {
-			return null;
+			return new Instances(trainingSet, 0);
 		}
 		
 		switch(sampling) {
@@ -169,11 +182,24 @@ public class WekaAnalyzer {
 			filteredDataset = Filter.useFilter(trainingSet, smote);
 			break;
 		default:
-			return null;
+			return new Instances(trainingSet, 0);
 		
 		}
 		
 		return filteredDataset;
+	}
+	
+	private static Instances selectFeatures(Instances trainingSet) throws Exception{
+		AttributeSelection filter = new AttributeSelection();
+	    CfsSubsetEval eval = new CfsSubsetEval();
+	    BestFirst search = new BestFirst();
+	    String[] opts = new String[]{ "-D", "1", "-N", "11"};
+	    search.setOptions(opts);
+	    filter.setEvaluator(eval);
+	    filter.setSearch(search);
+		filter.setInputFormat(trainingSet);
+		
+		return Filter.useFilter(trainingSet, filter);
 	}
 
 }
