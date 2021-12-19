@@ -1,4 +1,4 @@
-package com.cristiano.isw2.isw2_deliverable_two;
+package com.cristiano.isw2.isw2_deliverable_two.milestone_one;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
