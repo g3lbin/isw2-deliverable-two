@@ -47,7 +47,7 @@ public class CreateDataset {
 	private static List<JiraIssue> issues;
 	private static List<ReleaseInfo> releases;
 	private static final String PROJECT = "BOOKKEEPER";
-	private static final String DATASET = PROJECT + "-ds.csv";
+	private static final String DATASET = "results/" + PROJECT + "-ds.csv";
 	private static final Logger LOGGER = LoggerFactory.getLogger(CreateDataset.class);
 	private static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSX");
 	
