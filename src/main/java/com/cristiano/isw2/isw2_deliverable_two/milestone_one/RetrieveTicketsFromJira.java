@@ -25,6 +25,7 @@ import org.json.JSONObject;
 public class RetrieveTicketsFromJira {
 	
 	private static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSX");
+	private static int startAt = 0;
 	
 	private RetrieveTicketsFromJira() {
 		throw new IllegalStateException("Utility class");
@@ -59,7 +60,7 @@ public class RetrieveTicketsFromJira {
 		String jiraURL = "https://issues.apache.org/jira/rest/api/2/search?jql=project%20=%20" + 
 				project.toUpperCase() + "%20AND%20issuetype%20=%20Bug%20AND%20status%20in%20(Resolved,%20Closed)" + 
 		        "%20AND%20resolution%20=%20Fixed%20ORDER%20BY%20created%20ASC&fields=" +
-				"key,fixVersions,versions,created,updated,resolutiondate&maxResults=1000";
+				"key,fixVersions,versions,created,updated,resolutiondate&maxResults=1000&startAt=" + startAt;
 		List<JiraIssue> issuesList;
 		Map<String, Integer> versionsNum = new HashMap<>();
 		Set<String> releaseNames = new HashSet<>();
@@ -95,7 +96,8 @@ public class RetrieveTicketsFromJira {
 				        	iteration++;
 			        	}
 			        }
-			    }  
+			    }
+			    startAt = i + 1;
 		    } while (i < total);
 		} catch (IOException | JSONException e) {
 			throw new JSONException("findIssueIds failed");
