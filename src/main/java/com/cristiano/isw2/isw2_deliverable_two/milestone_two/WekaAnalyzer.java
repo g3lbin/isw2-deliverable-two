@@ -28,6 +28,7 @@ import weka.filters.supervised.attribute.AttributeSelection;
 import weka.filters.supervised.instance.Resample;
 import weka.filters.supervised.instance.SMOTE;
 import weka.filters.supervised.instance.SpreadSubsample;
+import weka.filters.unsupervised.attribute.Remove;
 
 public class WekaAnalyzer {
 	
@@ -178,39 +179,47 @@ public class WekaAnalyzer {
 		float defectiveInTrainingPercent = (float) 100*defectiveInTraining / trainingSet.size();
 		float defectiveInTestingPercent = (float) 100*defectiveInTesting / testingSet.size();
 		
-		Instances filteredTrSet;
-		Instances filteredTestSet = testingSet;
+		// ignore static columns (dataset and version)
+		Remove removeFilter = new Remove();
+		int[] indices = {0, 1};
+		removeFilter.setAttributeIndicesArray(indices);
+		removeFilter.setInvertSelection(false);
+		removeFilter.setInputFormat(trainingSet);
+		// apply filter
+		Instances filteredTrSet = Filter.useFilter(trainingSet, removeFilter);
+		Instances filteredTestSet = Filter.useFilter(testingSet, removeFilter);
+		
 		List<AnalysisResult> results = new ArrayList<>();
-		// sampling
-		for (int i = 0; i < 4; i++) {
-			filteredTrSet = applySampling(i, trainingSet);
-				// feature selection
-				for (int j = 0; j < 2; j++) {
-					AttributeSelection filter = selectFeatures(filteredTrSet);
-					if (j == 0) {
-						filteredTrSet = Filter.useFilter(trainingSet, filter);
-						filteredTestSet = Filter.useFilter(testingSet, filter);
-					}
-					for (int k = 0; k < 3; k++) {
-						// cost sensitive
-						Classifier cl = getClassifier(k);
-						for (int h = 0; h < 3 && cl != null; h++) {
-							AnalysisResult res = new AnalysisResult(
-									dataset, 
-									numTrReleases, 
-									trainingPercent, 
-									defectiveInTrainingPercent, 
-									defectiveInTestingPercent,
-									cl.getClass().getName());
-							res.setSampling(i);
-							res.setFeatureSelection(j != 0);
-							res.setCostSensitiveClassifier(k);
-							
-							costSensitiveClassification(cl, filteredTrSet, filteredTestSet, h, res);
-							results.add(res);
-						}
+		// feature selection
+		for (int j = 0; j < 2; j++) {
+			AttributeSelection filter = selectFeatures(trainingSet);
+			if (j == 0) {
+				filteredTrSet = Filter.useFilter(trainingSet, filter);
+				filteredTestSet = Filter.useFilter(testingSet, filter);
+			}
+			// sampling
+			for (int i = 0; i < 4; i++) {
+				filteredTrSet = applySampling(i, filteredTrSet);
+				// cost sensitive
+				for (int k = 0; k < 3; k++) {
+					Classifier cl = getClassifier(k);
+					for (int h = 0; h < 3 && cl != null; h++) {
+						AnalysisResult res = new AnalysisResult(
+								dataset, 
+								numTrReleases, 
+								trainingPercent, 
+								defectiveInTrainingPercent, 
+								defectiveInTestingPercent,
+								cl.getClass().getName());
+						res.setSampling(i);
+						res.setFeatureSelection(j != 0);
+						res.setCostSensitiveClassifier(h);
+						
+						costSensitiveClassification(cl, filteredTrSet, filteredTestSet, h, res);
+						results.add(res);
 					}
 				}
+			}
 		}
 		
 		return results;
@@ -243,7 +252,7 @@ public class WekaAnalyzer {
 		switch(sampling) {
 		case UNDERSAMPLING:
 			SpreadSubsample  spreadSubsample = new SpreadSubsample();
-			opts = new String[]{ "-M", "1.0"};
+			opts = new String[]{ "-M", "1.0" };
 			spreadSubsample.setOptions(opts);
 			spreadSubsample.setInputFormat(trainingSet);
 			filteredDataset = Filter.useFilter(trainingSet, spreadSubsample);
@@ -292,6 +301,7 @@ public class WekaAnalyzer {
 
 	private static void costSensitiveClassification(Classifier cl, Instances trainingSet, Instances testingSet, int type, AnalysisResult result) throws Exception {
 		Evaluation eval;
+		final int YES_INDEX = 1;
 		
 		int buggyIndx = testingSet.numAttributes() - 1;
 		trainingSet.setClassIndex(buggyIndx);
@@ -319,13 +329,13 @@ public class WekaAnalyzer {
 			return;
 		}
 		
-		result.setTp(eval.numTrueNegatives(0));
-		result.setFp(eval.numFalseNegatives(0));
-		result.setTn(eval.numTruePositives(0));
-		result.setFn(eval.numFalsePositives(0));
-		result.setPrecision(eval.precision(0));
-		result.setRecall(eval.recall(0));
-		result.setAuc(eval.areaUnderROC(0));
+		result.setTp(eval.numTrueNegatives(YES_INDEX));
+		result.setFp(eval.numFalseNegatives(YES_INDEX));
+		result.setTn(eval.numTruePositives(YES_INDEX));
+		result.setFn(eval.numFalsePositives(YES_INDEX));
+		result.setPrecision(eval.precision(YES_INDEX));
+		result.setRecall(eval.recall(YES_INDEX));
+		result.setAuc(eval.areaUnderROC(YES_INDEX));
 		result.setKappa(eval.kappa());
 	}
 	
