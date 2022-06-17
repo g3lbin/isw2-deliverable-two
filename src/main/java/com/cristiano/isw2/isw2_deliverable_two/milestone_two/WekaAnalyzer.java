@@ -202,15 +202,15 @@ public class WekaAnalyzer {
 				filteredTrSet = applySampling(i, filteredTrSet);
 				// cost sensitive
 				for (int k = 0; k < 3; k++) {
-					Classifier cl = getClassifier(k);
-					for (int h = 0; h < 3 && cl != null; h++) {
+					for (int h = 0; h < 3; h++) {
+						Classifier cl = getClassifier(k);
 						AnalysisResult res = new AnalysisResult(
 								dataset, 
 								numTrReleases, 
 								trainingPercent, 
 								defectiveInTrainingPercent, 
 								defectiveInTestingPercent,
-								cl.getClass().getName());
+								getClassifierName(k));
 						res.setSampling(i);
 						res.setFeatureSelection(j != 0);
 						res.setCostSensitiveClassifier(h);
@@ -223,6 +223,19 @@ public class WekaAnalyzer {
 		}
 		
 		return results;
+	}
+	
+	private static String getClassifierName(int classifier) {
+		switch (classifier) {
+		case NAIVE_BAYES:
+			return "NaiveBayes";
+		case IBK:
+			return "IBk";
+
+		default:
+			break;
+		}
+		return "RandomForest";
 	}
 
 	private static Instances applySampling(int sampling, Instances trainingSet) throws Exception {
